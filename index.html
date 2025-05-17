@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>中国象棋</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CDN (开发环境使用) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <!-- 难度选择模态对话框 -->
+    <div id="difficultyModal" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="modal-content bg-white p-6 rounded-lg shadow-xl text-center">
+            <h2 class="text-xl font-semibold mb-4">选择游戏难度</h2>
+            <div class="difficulty-options mb-6">
+                <label class="block mb-2"><input type="radio" name="modalDifficulty" value="2" checked> 易 (深度 2)</label>
+                <label class="block mb-2"><input type="radio" name="modalDifficulty" value="3"> 中 (深度 3)</label>
+                <label class="block"><input type="radio" name="modalDifficulty" value="4"> 难 (深度 4)</label>
+            </div>
+            <button id="startGameButton" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">开始游戏</button>
+        </div>
+    </div>
+
+    <!-- 临时消息弹窗 -->
+    <div id="popupMessage" class="popup-message fixed top-5 left-1/2 transform -translate-x-1/2 bg-green-500 text-white py-2 px-4 rounded-lg shadow-md z-50 hidden">
+        <!-- 消息内容会通过JS填充 -->
+    </div>
+
+    <div class="board-container">
+        <div class="scores">
+            <span class="mr-4">红方得分: <span id="redScoreDisplay">0</span></span>
+            <span>黑方得分: <span id="blackScoreDisplay">0</span></span>
+        </div>
+        <div class="board" id="board">
+            <div class="river-overlay">
+                <span class="chu-he">楚 河</span>
+                <span class="han-jie">漢 界</span>
+            </div>
+        </div>
+        <!-- 新的容器，包含难度显示和控制按钮 -->
+        <div class="status-controls-container mt-4 flex items-center justify-center w-full" style="max-width: 540px;"> 
+            <div class="controls flex">
+                <button id="resetButton" class="rounded-lg">重新开始</button>
+                <button id="resignButton" class="rounded-lg ml-2">认输</button>
+                <button id="undoButton" class="rounded-lg ml-2">悔棋</button>
+                <button id="toggleMusicButton" class="rounded-lg ml-2">播放音乐</button>
+            </div>
+            <div id="currentDifficultyDisplay" class="text-sm text-gray-700 ml-4">
+                当前难度: 未选择
+            </div>
+        </div>
+    </div>
+
+    <audio id="clickSound" src="audio/click.wav" preload="auto"></audio>
+    <audio id="backgroundMusicPlayer" preload="auto"></audio>
+
+    <script type="module" src="./main.js"></script>
+</body>
+</html>

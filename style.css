@@ -1,0 +1,188 @@
+/* 主样式文件 */
+body {
+    font-family: 'Noto Sans SC', sans-serif;
+    background-color: #f0f0f0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    margin: 0;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.board-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative; 
+}
+
+.board {
+    width: 90vw; 
+    max-width: 540px; 
+    height: calc(90vw * 10 / 9); 
+    max-height: 600px; 
+    background-color: #f0d9b5; 
+    border: 2px solid #8b4513; 
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    grid-template-rows: repeat(10, 1fr);
+    position: relative; 
+    box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+    border-radius: 8px;
+}
+
+.square {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+}
+
+.square::before, .square::after {
+    content: '';
+    position: absolute;
+    background-color: #8b4513;
+    z-index: 0;
+}
+
+.square:not(:nth-child(9n))::before {
+    width: 100%;
+    height: 2px;
+    left: 50%;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.square:not(:nth-child(n+82))::after {
+    width: 2px;
+    height: 100%;
+    left: 50%;
+    top: 50%;
+    transform: translateX(-50%);
+}
+
+.square:nth-child(9n)::before { display: none; }
+.square:nth-child(n+82)::after { display: none; }
+.square:nth-child(n+37):nth-child(-n+45)::after { display: none; }
+
+.palace-line {
+    position: absolute;
+    background-color: #8b4513;
+    z-index: 0;
+}
+
+.river-overlay {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 100%;
+    transform: translateY(-50%);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 12%;
+    box-sizing: border-box;
+    font-size: clamp(14px, 3.5vw, 22px);
+    font-weight: bold;
+    color: #4a2a0a;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.piece {
+    width: 80%;
+    height: 80%;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(16px, 4vw, 24px);
+    font-weight: bold;
+    cursor: pointer;
+    position: relative;
+    z-index: 2;
+    transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.piece:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+}
+
+.red-piece {
+    background-color: #ffcccc;
+    color: #c00;
+    border: 2px solid #c00;
+}
+
+.black-piece {
+    background-color: #ccc;
+    color: #000;
+    border: 2px solid #000;
+}
+
+.selected {
+    border: 3px solid #007bff !important;
+    box-shadow: 0 0 10px #007bff;
+}
+
+.valid-move {
+    background-color: rgba(0, 255, 0, 0.3);
+    border-radius: 50%;
+    width: 60%;
+    height: 60%;
+    z-index: 1;
+}
+
+.message-area {
+    margin-top: 10px;
+    margin-bottom: 10px;
+    padding: 10px 20px;
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    color: #333;
+    font-size: 1.1em;
+    text-align: center;
+    min-height: 50px;
+    width: 90vw;
+    max-width: 540px;
+}
+
+.scores {
+    margin-top: 10px;
+    text-align: center;
+    font-size: 1.1em;
+    color: #333;
+    width: 90vw;
+    max-width: 540px;
+}
+
+.controls {
+    /* margin-top: 15px;  已由父容器的 mt-4 处理 */
+    /* display: flex;  父容器已经是flex了 */
+}
+
+.controls button {
+    padding: 6px 12px;     /* 稍微调整padding以适应新的字体大小，保持按钮视觉大小 */
+    font-size: 0.875em;  /* 匹配Tailwind的text-sm (通常是14px / 0.875rem) */
+    line-height: 1.5;    /* 确保按钮内文本有合适的行高，有助于对齐 */
+    color: white;
+    background-color: #007bff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    display: inline-flex; /* 帮助内部文本垂直居中 */
+    align-items: center;  /* 帮助内部文本垂直居中 */
+    justify-content: center; /* 帮助内部文本水平居中 */
+}
+
+.controls button:hover {
+    background-color: #0056b3;
+} 
