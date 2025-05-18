@@ -1,5 +1,7 @@
 # Chinese Chess Game
 
+English | [中文](README.md)
+
 This project is a JavaScript implementation of Chinese Chess (Xiangqi), featuring AI opponents. It supports sound effects, background music, difficulty adjustment, and move undo functionality.
 
 ## Project Structure
