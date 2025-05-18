@@ -4,9 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>中国象棋</title>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap" rel="stylesheet">
-    <!-- Tailwind CDN (开发环境使用) -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 移除Google字体链接，使用本地字体 -->
+    <!-- 移除Tailwind CDN，使用本地编译版本 -->
+    <link rel="stylesheet" href="./style.css">
+    <style>
+        /* 添加本地字体回退方案 */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'WenQuanYi Micro Hei', sans-serif;
+        }
+    </style>
 </head>
 <body>
     <!-- 难度选择模态对话框 -->
@@ -44,7 +50,9 @@
                 <button id="resetButton" class="rounded-lg">重新开始</button>
                 <button id="resignButton" class="rounded-lg ml-2">认输</button>
                 <button id="undoButton" class="rounded-lg ml-2">悔棋</button>
-                <button id="toggleMusicButton" class="rounded-lg ml-2">播放音乐</button>
+                <button id="musicToggleButton" class="rounded-lg ml-2">
+                    <span id="musicToggleIcon">🔊</span>
+                </button>
             </div>
             <div id="currentDifficultyDisplay" class="text-sm text-gray-700 ml-4">
                 当前难度: 未选择
@@ -52,8 +60,14 @@
         </div>
     </div>
 
+    <!-- 音效文件 -->
     <audio id="clickSound" src="audio/click.wav" preload="auto"></audio>
-    <audio id="backgroundMusicPlayer" preload="auto"></audio>
+    
+    <!-- 背景音乐文件 -->
+    <audio id="bgMusic1" src="audio/1.mp3" preload="auto" loop></audio>
+    <audio id="bgMusic2" src="audio/2.mp3" preload="auto" loop></audio>
+    <audio id="bgMusic3" src="audio/3.mp3" preload="auto" loop></audio>
+    <audio id="bgMusic4" src="audio/4.mp3" preload="auto" loop></audio>
 
     <script type="module" src="./main.js"></script>
 </body>

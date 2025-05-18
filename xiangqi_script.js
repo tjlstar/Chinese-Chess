@@ -4,17 +4,14 @@ let difficultyModal, startGameButton, modalDifficultyRadios, popupMessageElement
 let aiWorker; // Declare aiWorker here
 let aiMoveIndicatorTimeout = null;
 let clickSound; // 为音效元素声明变量
-let backgroundMusicPlayer;
-let toggleMusicButton; // 新增：音乐播放/暂停按钮的引用
-const backgroundPlaylist = [
-    'audio/1.mp3', // 请替换为您的第一个MP3文件名
-    'audio/2.mp3',  // 请替换为您的第二个MP3文件名
-    'audio/3.mp3',
-    'audio/4.mp3',
-    'audio/5.mp3'
-];
-let currentTrackIndex = 0;
 let userHasInteracted = false; // 跟踪用户是否已与页面交互
+
+// --- 背景音乐相关变量 ---
+let bgMusicElements = []; // 存储所有背景音乐元素
+let currentMusicIndex = 0; // 当前播放的音乐索引
+let isMusicPlaying = false; // 音乐是否正在播放
+let musicToggleButton; // 音乐控制按钮
+let musicToggleIcon; // 音乐控制按钮图标
 
 // --- Constants (non-DOM) ---
 const ROWS = 10;
@@ -243,6 +240,11 @@ function updateScoreDisplay() {
 
 function onSquareClick(row, col) {
     if (gameOver) return;
+    // 添加检查：如果当前是黑方(AI)回合，不允许用户操作
+    if (currentPlayer === 'B') {
+        showTemporaryMessage("请等待黑方(AI)思考完成", 1500, true);
+        return;
+    }
     if (typeof clearValidMoveMarkers === 'function') clearValidMoveMarkers();
     const pieceId = boardState[row][col];
 
@@ -314,6 +316,15 @@ function movePiece(fromRow, fromCol, toRow, toCol) {
         console.warn("movePiece: Game over or boardElement is null.");
         return;
     }
+    
+    // 标记用户已交互，可以播放音乐
+    userHasInteracted = true;
+    
+    // 如果音乐未播放且允许播放，则开始播放
+    if (!isMusicPlaying && !gameOver) {
+        playBackgroundMusic();
+    }
+    
     const pieceId = boardState[fromRow][fromCol];
     const capturedPieceId = boardState[toRow][toCol];
     moveHistory.push({
@@ -361,6 +372,14 @@ function endGame(winner, reason) {
         console.error("endGame: Essential DOM elements missing (resetButton, boardElement, or popupMessageElement).");
         return;
     }
+    
+    // 如果AI工作线程还在运行，终止它
+    if (aiWorker) {
+        aiWorker.terminate();
+        aiWorker = new Worker(new URL('./ai-worker.js', import.meta.url), { type: 'module' });
+        setupAIWorker(); // 重新设置AI Worker监听器
+    }
+    
     gameOver = true;
     let winnerText = ''; 
     let scoreMsg = '';
@@ -376,14 +395,39 @@ function endGame(winner, reason) {
         winnerText = '平局';
     }
     if (typeof updateScoreDisplay === 'function') updateScoreDisplay();
-    showTemporaryMessage(`${winnerText}！${reason}。(${scoreMsg}) 再来一盘？`, 5000);
+    
+    // 更清晰地提示用户可以再来一盘
+    showTemporaryMessage(`${winnerText}！${reason}。(${scoreMsg}) 点击"再来一盘"开始新游戏`, 5000);
     resetButton.textContent = '再来一盘';
+    
+    // 解除棋盘锁定，让用户可以点击"再来一盘"按钮
     boardElement.style.pointerEvents = 'none';
+    
+    // 高亮"再来一盘"按钮以引导用户点击
+    if (resetButton) {
+        resetButton.classList.add('highlight-button');
+        // 5秒后移除高亮，避免长时间干扰
+        setTimeout(() => {
+            resetButton.classList.remove('highlight-button');
+        }, 5000);
+    }
 }
 
 function switchPlayer() {
     if (gameOver) return;
     currentPlayer = (currentPlayer === 'R' ? 'B' : 'R');
+    
+    // 根据当前玩家更新棋盘交互状态
+    if (boardElement) {
+        if (currentPlayer === 'B') {
+            // 黑方(AI)回合，锁定棋盘
+            boardElement.style.pointerEvents = 'none';
+        } else {
+            // 红方回合，解锁棋盘
+            boardElement.style.pointerEvents = 'auto';
+        }
+    }
+    
     if (typeof updateTurnMessage === 'function') updateTurnMessage();
     if (currentPlayer === 'B' && !gameOver && aiWorker) { 
         showTemporaryMessage("黑方思考中...", 1500);
@@ -584,15 +628,113 @@ function isStalemate(side) {
 }
 
 function handleResign() {
-    if (gameOver) return;
-    const winner = currentPlayer === 'R' ? 'B' : 'R';
-    const loserName = currentPlayer === 'R' ? '红方' : '黑方';
-    if (typeof endGame === 'function') endGame(winner, `${loserName}主动认输`);
+    console.log(`[handleResign] Called. Current player at start of resign: ${currentPlayer}`);
+    gameOver = true; // 立即将游戏标记为结束，以防止旧AI Worker的移动被处理
+
+    const resigningPlayerSide = 'R'; 
+    const winnerSide = 'B';        
+    const winnerName = winnerSide === 'R' ? '红方' : '黑方';
+
+    console.log(`[handleResign] User (Red) is resigning. Winner: ${winnerSide}`);
+
+    blackScore++;
+    console.log(`[handleResign] Black score incremented to: ${blackScore}`);
+    if (typeof updateScoreDisplay === 'function') updateScoreDisplay();
+
+    if (aiWorker) {
+        console.log("[handleResign] Terminating existing AI worker...");
+        aiWorker.onmessage = null; // 关键：在terminate前移除消息处理器
+        aiWorker.terminate();
+        
+        console.log("[handleResign] Creating new AI worker...");
+        aiWorker = new Worker(new URL('./ai-worker.js', import.meta.url), { type: 'module' });
+        if (typeof setupAIWorker === 'function') {
+            setupAIWorker(); 
+            console.log("[handleResign] New AI worker setup complete.");
+        } else {
+            console.error("[handleResign] setupAIWorker function is not defined!");
+        }
+    } else {
+        console.log("[handleResign] No AI worker instance to terminate/recreate.");
+    }
+
+    showTemporaryMessage(`重置棋盘中，${winnerName}先行...`, 1500);
+
+    setTimeout(() => {
+        console.log("[handleResign setTimeout] Starting delayed operations.");
+        if (typeof initializeBoardAndGame === 'function') {
+            initializeBoardAndGame(false); 
+        }
+
+        currentPlayer = winnerSide; 
+        gameOver = false; // 为新的一局重置gameOver状态
+        console.log(`[handleResign setTimeout] Next turn player set to: ${currentPlayer}, gameOver reset to false.`);
+
+        showTemporaryMessage(`红方主动认输。黑方得1分。`, 3000);
+
+        if (typeof updateTurnMessage === 'function') {
+            updateTurnMessage(); 
+        }
+
+        if (boardElement) {
+            boardElement.style.pointerEvents = 'none'; 
+            if (aiWorker) { 
+                console.log("[handleResign setTimeout] AI's turn (B). Preparing to make AI move for the new game.");
+                showTemporaryMessage("黑方思考中...", 1500); 
+                if (typeof makeAIMove === 'function') setTimeout(makeAIMove, 500); 
+            } else {
+                 console.error("[handleResign setTimeout] AI's turn, but AI worker is null!");
+            }
+        }
+        
+        if(resetButton) resetButton.textContent = '重新开始';
+        console.log("[handleResign setTimeout] Delayed operations complete.");
+    }, 1500); 
+}
+
+// 在 setupAIWorker 的 onmessage 中也加日志和gameOver检查
+function setupAIWorker() {
+    if (!aiWorker) {
+        console.error("[setupAIWorker] aiWorker is null, cannot set onmessage.");
+        return;
+    }
+    console.log("[setupAIWorker] Setting up onmessage for current AI worker instance.");
+    aiWorker.onmessage = function(e) {
+        const { type, move } = e.data;
+        console.log(`[aiWorker.onmessage] Received message: type=${type}`, move);
+
+        if (gameOver && type === 'bestMove') {
+            console.warn("[aiWorker.onmessage] Game is over (gameOver=true), but received a 'bestMove'. Ignoring move from worker.");
+            return; 
+        }
+
+        if (type === 'bestMove' && move) {
+            // 确保当前轮到AI (黑方)
+            if (currentPlayer !== 'B') {
+                console.warn(`[aiWorker.onmessage] Received 'bestMove' but current player is ${currentPlayer}, not 'B'. Ignoring.`);
+                return;
+            }
+            if (typeof movePiece === 'function') {
+                console.log("[aiWorker.onmessage] Processing 'bestMove'. Calling movePiece.");
+                movePiece(move.fromRow, move.fromCol, move.toRow, move.toCol);
+                if (typeof drawAIMoveIndicator === 'function') {
+                    drawAIMoveIndicator(move.fromRow, move.fromCol, move.toRow, move.toCol);
+                }
+            } else {
+                console.error("[aiWorker.onmessage] movePiece function is not defined.");
+            }
+        }
+    };
 }
 
 function handleUndoMove() {
     if (gameOver) {
         showTemporaryMessage("游戏已结束，无法悔棋。", 3000, true);
+        return;
+    }
+    // 添加检查：如果当前是黑方(AI)回合，不允许悔棋
+    if (currentPlayer === 'B') {
+        showTemporaryMessage("AI思考中，请稍等...", 2000, true);
         return;
     }
     if (moveHistory.length < 2) { 
@@ -690,6 +832,110 @@ function drawAIMoveIndicator(fromRow, fromCol, toRow, toCol) {
     }, 2500);
 }
 
+// --- 背景音乐控制函数 ---
+function initBackgroundMusic() {
+    // 初始化背景音乐元素数组
+    bgMusicElements = [
+        document.getElementById('bgMusic1'),
+        document.getElementById('bgMusic2'),
+        document.getElementById('bgMusic3'),
+        document.getElementById('bgMusic4')
+    ];
+    
+    // 检查是否所有元素都存在
+    const allElementsExist = bgMusicElements.every(el => el !== null);
+    if (!allElementsExist) {
+        console.error("一个或多个背景音乐元素未找到");
+        return;
+    }
+    
+    // 为每个音乐元素添加结束事件监听器，以实现循环播放下一首
+    bgMusicElements.forEach((music, index) => {
+        music.addEventListener('ended', () => {
+            if (isMusicPlaying) {
+                playNextTrack();
+            }
+        });
+    });
+    
+    // 初始化音乐控制按钮
+    musicToggleButton = document.getElementById('musicToggleButton');
+    musicToggleIcon = document.getElementById('musicToggleIcon');
+    
+    if (musicToggleButton && musicToggleIcon) {
+        musicToggleButton.addEventListener('click', toggleBackgroundMusic);
+    } else {
+        console.error("音乐控制按钮元素未找到");
+    }
+}
+
+function playBackgroundMusic() {
+    // 停止所有其他音乐
+    bgMusicElements.forEach((music, idx) => {
+        if (idx !== currentMusicIndex) {
+            music.pause();
+            music.currentTime = 0;
+        }
+    });
+    
+    // 播放当前音乐
+    const currentMusic = bgMusicElements[currentMusicIndex];
+    if (currentMusic) {
+        // 检查浏览器是否允许自动播放
+        const playPromise = currentMusic.play();
+        
+        if (playPromise !== undefined) {
+            playPromise.then(() => {
+                isMusicPlaying = true;
+                if (musicToggleIcon) musicToggleIcon.textContent = '🔊';
+            }).catch(error => {
+                console.warn("无法自动播放背景音乐:", error);
+                isMusicPlaying = false;
+                if (musicToggleIcon) musicToggleIcon.textContent = '🔇';
+                
+                // 如果是因为用户交互问题，等待用户交互后再尝试
+                if (!userHasInteracted) {
+                    showTemporaryMessage("点击棋盘或按钮以启用背景音乐", 3000);
+                }
+            });
+        }
+    }
+}
+
+function pauseBackgroundMusic() {
+    // 暂停当前播放的音乐
+    const currentMusic = bgMusicElements[currentMusicIndex];
+    if (currentMusic) {
+        currentMusic.pause();
+    }
+    isMusicPlaying = false;
+    if (musicToggleIcon) musicToggleIcon.textContent = '🔇';
+}
+
+function playNextTrack() {
+    // 暂停当前音乐
+    if (bgMusicElements[currentMusicIndex]) {
+        bgMusicElements[currentMusicIndex].pause();
+        bgMusicElements[currentMusicIndex].currentTime = 0;
+    }
+    
+    // 切换到下一首
+    currentMusicIndex = (currentMusicIndex + 1) % bgMusicElements.length;
+    
+    // 播放新的音乐
+    playBackgroundMusic();
+}
+
+function toggleBackgroundMusic() {
+    if (isMusicPlaying) {
+        pauseBackgroundMusic();
+        showTemporaryMessage("背景音乐已暂停", 1500);
+    } else {
+        playBackgroundMusic();
+        showTemporaryMessage("背景音乐已开启", 1500);
+    }
+}
+
 // --- Event Listeners & Initial Game Setup ---
 window.addEventListener('DOMContentLoaded', () => {
     // Initialize DOM element variables here
@@ -706,39 +952,14 @@ window.addEventListener('DOMContentLoaded', () => {
     popupMessageElement = document.getElementById('popupMessage');
     currentDifficultyDisplay = document.getElementById('currentDifficultyDisplay');
     clickSound = document.getElementById('clickSound');
-    backgroundMusicPlayer = document.getElementById('backgroundMusicPlayer');
-    toggleMusicButton = document.getElementById('toggleMusicButton'); // 获取新按钮的引用
+
+    // 初始化背景音乐
+    initBackgroundMusic();
 
     // Initialize AI Worker here
-    aiWorker = new Worker('ai-worker.js'); // Assign to the globally declared 'let'
+    aiWorker = new Worker(new URL('./ai-worker.js', import.meta.url), { type: 'module' });
+    setupAIWorker(); // 使用新的setupAIWorker函数来设置AI Worker监听器
     
-    // Setup AI Worker message listener
-    aiWorker.onmessage = function(e) {
-        const { type, move } = e.data;
-        if (type === 'bestMove' && move) {
-            if (typeof movePiece === 'function') {
-                movePiece(move.fromRow, move.fromCol, move.toRow, move.toCol); // Move piece first
-                // Then draw indicator
-                if (typeof drawAIMoveIndicator === 'function') {
-                    drawAIMoveIndicator(move.fromRow, move.fromCol, move.toRow, move.toCol);
-                }
-            } else {
-                console.error("movePiece function is not defined in aiWorker.onmessage context.");
-            }
-        }
-    };
-
-    // Background music logic
-    if (backgroundMusicPlayer) {
-        backgroundMusicPlayer.addEventListener('ended', () => {
-            // Current track finished playing, play next track
-            currentTrackIndex = (currentTrackIndex + 1) % backgroundPlaylist.length;
-            playCurrentTrack();
-        });
-        // 初始加载时，音乐是暂停的，所以按钮应该显示"播放音乐"
-        // updateToggleMusicButtonText(); // 在这里调用，或在startGameButton逻辑后确保状态正确
-    }
-
     // Fallback error message if popup itself is missing during critical init.
     const CRITICAL_INIT_ERROR_MSG = "错误：界面关键元素丢失，无法启动或重置游戏。";
 
@@ -768,14 +989,11 @@ window.addEventListener('DOMContentLoaded', () => {
             }
             
             userHasInteracted = true; // Mark user as interacted
-            if (backgroundMusicPlayer && backgroundPlaylist.length > 0) {
-                // 确保从第一首或当前指定的曲目开始（如果之前被暂停过）
-                // playCurrentTrack 会处理加载和播放
-                if (backgroundMusicPlayer.paused) { // 只在暂停时才通过开始游戏按钮播放
-                    playCurrentTrack(); 
-                }
+            // 用户已交互，尝试播放背景音乐
+            if (!isMusicPlaying) {
+                playBackgroundMusic();
             }
-
+            
             if (boardElement && popupMessageElement && currentDifficultyDisplay && resetButton) {
                 initializeBoardAndGame(true); 
             } else {
@@ -789,21 +1007,49 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     if (resetButton) {
-resetButton.addEventListener('click', () => { 
+        resetButton.addEventListener('click', () => { 
+            console.log("[resetButton] Clicked.");
+            gameOver = true; // 立即将游戏标记为结束，以防止AI Worker的移动被处理
+
+            // 终止并重新创建AI Worker
+            if (aiWorker) {
+                console.log("[resetButton] Terminating existing AI worker...");
+                aiWorker.onmessage = null; // 在terminate前移除消息处理器
+                aiWorker.terminate();
+                
+                console.log("[resetButton] Creating new AI worker...");
+                aiWorker = new Worker(new URL('./ai-worker.js', import.meta.url), { type: 'module' });
+                if (typeof setupAIWorker === 'function') {
+                    setupAIWorker(); 
+                    console.log("[resetButton] New AI worker setup complete.");
+                } else {
+                    console.error("[resetButton] setupAIWorker function is not defined!");
+                }
+            } else {
+                console.log("[resetButton] No AI worker instance to terminate/recreate.");
+            }
+
+            // 后续逻辑：显示难度选择模态框或直接开始新游戏
             if (difficultyModal) {
+                console.log("[resetButton] Showing difficulty modal.");
                 difficultyModal.classList.remove('hidden'); 
                 if(boardElement) boardElement.style.pointerEvents = 'none'; 
-                else console.warn("resetButton: boardElement is null.");
+                else console.warn("[resetButton] boardElement is null while trying to disable pointer events.");
                 if(currentDifficultyDisplay) currentDifficultyDisplay.textContent = '当前难度: 未选择';
-                else console.warn("resetButton: currentDifficultyDisplay is null.");
+                else console.warn("[resetButton] currentDifficultyDisplay is null.");
             } else {
-                console.error("Reset button clicked, but difficulty modal not found. Re-initializing with current/default settings.");
+                console.error("[resetButton] Difficulty modal not found. Attempting to re-initialize game directly.");
+                // 如果模态框不存在，直接初始化游戏 (重置分数)
                 if (boardElement && popupMessageElement && currentDifficultyDisplay && resetButton) {
-                    initializeBoardAndGame(true); 
+                    if (typeof initializeBoardAndGame === 'function') {
+                        initializeBoardAndGame(true); 
+                    } else {
+                        console.error("[resetButton] initializeBoardAndGame function is not defined for direct re-init!");
+                    }
                 } else {
-                    console.error("Cannot re-initialize game due to missing essential DOM elements (reset fallback).");
+                    console.error("[resetButton] Cannot re-initialize game due to missing essential DOM elements (direct re-init fallback).");
                     if(popupMessageElement) showTemporaryMessage(CRITICAL_INIT_ERROR_MSG, 5000, true);
-                    else console.error(CRITICAL_INIT_ERROR_MSG + " (popupMessageElement also missing)");
+                    else console.error(CRITICAL_INIT_ERROR_MSG + " (popupMessageElement also missing for direct re-init)");
                 }
             }
         });
@@ -829,70 +1075,8 @@ window.addEventListener('resize', () => {
         }
     });
 
-    // 背景音乐逻辑
-    if (toggleMusicButton && backgroundMusicPlayer) {
-        toggleMusicButton.addEventListener('click', () => {
-            userHasInteracted = true; // 标记用户交互
-            if (backgroundPlaylist.length === 0) return;
-
-            if (backgroundMusicPlayer.paused) {
-                // 如果从未加载过歌曲 (src为空) 或者要确保从当前列表索引播放
-                if (!backgroundMusicPlayer.src || backgroundMusicPlayer.currentSrc === "") {
-                    backgroundMusicPlayer.src = backgroundPlaylist[currentTrackIndex];
-                    backgroundMusicPlayer.load();
-                }
-                backgroundMusicPlayer.play()
-                    .then(() => updateToggleMusicButtonText())
-                    .catch(err => {
-                        console.warn("音乐播放失败:", err);
-                        updateToggleMusicButtonText();
-                    });
-            } else {
-                backgroundMusicPlayer.pause();
-                updateToggleMusicButtonText();
-            }
-        });
-    }
-
-    // 设置按钮的初始状态
-    updateToggleMusicButtonText(); 
+    // 整个文档的点击事件，用于处理用户交互激活音频播放
+    document.addEventListener('click', () => {
+        userHasInteracted = true;
+    });
 });
-
-function updateToggleMusicButtonText() {
-    if (toggleMusicButton && backgroundMusicPlayer) {
-        if (backgroundMusicPlayer.paused) {
-            toggleMusicButton.textContent = "播放音乐";
-        } else {
-            toggleMusicButton.textContent = "暂停音乐";
-        }
-    }
-}
-
-function playCurrentTrack() {
-    if (!backgroundMusicPlayer || backgroundPlaylist.length === 0) {
-        updateToggleMusicButtonText(); // 确保按钮状态正确，即使不播放
-        return;
-    }
-    // 只有在用户交互后才真正尝试播放，但无论如何都更新按钮状态
-    if (!userHasInteracted) {
-        updateToggleMusicButtonText();
-        return;
-    }
-
-    backgroundMusicPlayer.src = backgroundPlaylist[currentTrackIndex];
-    backgroundMusicPlayer.load();
-    const playPromise = backgroundMusicPlayer.play();
-
-    if (playPromise !== undefined) {
-        playPromise.then(_ => {
-            // 播放开始
-            updateToggleMusicButtonText();
-        }).catch(error => {
-            console.warn("背景音乐播放失败或被阻止:", error);
-            updateToggleMusicButtonText();
-        });
-    } else {
-        // 对于不支持Promise的旧版audio元素 (不太可能遇到)
-        updateToggleMusicButtonText();
-    }
-}
