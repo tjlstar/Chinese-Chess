@@ -12,6 +12,7 @@ let currentMusicIndex = 0; // 当前播放的音乐索引
 let isMusicPlaying = false; // 音乐是否正在播放
 let musicToggleButton; // 音乐控制按钮
 let musicToggleIcon; // 音乐控制按钮图标
+let userPausedMusic = false; // 新增：用户是否主动暂停了音乐
 
 // --- Constants (non-DOM) ---
 const ROWS = 10;
@@ -54,7 +55,7 @@ let redScore = 0;
 let blackScore = 0;
 let gameOver = false;
 let moveHistory = []; 
-let currentAIDepth = 3; 
+let currentAIDepth = 2; 
 let messageTimeout = null;
 
 // --- Functions ---
@@ -320,8 +321,8 @@ function movePiece(fromRow, fromCol, toRow, toCol) {
     // 标记用户已交互，可以播放音乐
     userHasInteracted = true;
     
-    // 如果音乐未播放且允许播放，则开始播放
-    if (!isMusicPlaying && !gameOver) {
+    // 只有在用户没有主动暂停音乐的情况下才自动播放
+    if (!isMusicPlaying && !gameOver && !userPausedMusic) {
         playBackgroundMusic();
     }
     
@@ -383,33 +384,106 @@ function endGame(winner, reason) {
     gameOver = true;
     let winnerText = ''; 
     let scoreMsg = '';
+    
     if (winner === 'R') { 
         redScore++; 
         winnerText = '红方胜利'; 
         scoreMsg = '红方得1分'; 
+        
+        // 更新分数显示
+        if (typeof updateScoreDisplay === 'function') updateScoreDisplay();
+        
+        // 提示用户重置棋盘中
+        showTemporaryMessage(`恭喜${winnerText}！${reason}。(${scoreMsg}) 重置棋盘中...`, 2000);
+        
+        // 延迟1.5秒后重置棋盘并开始新局
+        setTimeout(() => {
+            // 重置棋盘但不重置分数
+            if (typeof initializeBoardAndGame === 'function') {
+                initializeBoardAndGame(false);
+            }
+            
+            // 红方先手
+            currentPlayer = 'R';
+            gameOver = false;
+            
+            // 更新回合信息
+            if (typeof updateTurnMessage === 'function') {
+                updateTurnMessage();
+            }
+            
+            // 解锁棋盘让红方可以操作
+            if (boardElement) {
+                boardElement.style.pointerEvents = 'auto';
+            }
+            
+            // 设置按钮文本为"重新开始"
+            if(resetButton) resetButton.textContent = '重新开始';
+        }, 1500);
+        
     } else if (winner === 'B') { 
         blackScore++; 
         winnerText = '黑方胜利'; 
         scoreMsg = '黑方得1分'; 
+        
+        // 更新分数显示
+        if (typeof updateScoreDisplay === 'function') updateScoreDisplay();
+        
+        // 提示用户重置棋盘中
+        showTemporaryMessage(`${winnerText}！${reason}。(${scoreMsg}) 重置棋盘中...`, 2000);
+        
+        // 延迟1.5秒后重置棋盘并开始新局，黑方先行
+        setTimeout(() => {
+            // 重置棋盘但不重置分数
+            if (typeof initializeBoardAndGame === 'function') {
+                initializeBoardAndGame(false);
+            }
+            
+            // 黑方先手
+            currentPlayer = 'B';
+            gameOver = false;
+            
+            // 更新回合信息
+            if (typeof updateTurnMessage === 'function') {
+                updateTurnMessage();
+            }
+            
+            // 锁定棋盘，等待黑方(AI)落子
+            if (boardElement) {
+                boardElement.style.pointerEvents = 'none';
+            }
+            
+            // 设置按钮文本为"重新开始"
+            if(resetButton) resetButton.textContent = '重新开始';
+            
+            // 提示黑方思考中
+            showTemporaryMessage("黑方思考中...", 1500);
+            
+            // 延迟一下再让AI走棋，确保界面更新完成
+            setTimeout(() => {
+                if (typeof makeAIMove === 'function' && !gameOver && aiWorker) {
+                    makeAIMove();
+                }
+            }, 500);
+        }, 1500);
+        
     } else { 
         winnerText = '平局';
-    }
-    if (typeof updateScoreDisplay === 'function') updateScoreDisplay();
-    
-    // 更清晰地提示用户可以再来一盘
-    showTemporaryMessage(`${winnerText}！${reason}。(${scoreMsg}) 点击"再来一盘"开始新游戏`, 5000);
-    resetButton.textContent = '再来一盘';
-    
-    // 解除棋盘锁定，让用户可以点击"再来一盘"按钮
-    boardElement.style.pointerEvents = 'none';
-    
-    // 高亮"再来一盘"按钮以引导用户点击
-    if (resetButton) {
-        resetButton.classList.add('highlight-button');
-        // 5秒后移除高亮，避免长时间干扰
-        setTimeout(() => {
-            resetButton.classList.remove('highlight-button');
-        }, 5000);
+        // 更清晰地提示用户可以再来一盘
+        showTemporaryMessage(`${winnerText}！${reason}。点击"再来一盘"开始新游戏`, 5000);
+        resetButton.textContent = '再来一盘';
+        
+        // 解除棋盘锁定，让用户可以点击"再来一盘"按钮
+        boardElement.style.pointerEvents = 'none';
+        
+        // 高亮"再来一盘"按钮以引导用户点击
+        if (resetButton) {
+            resetButton.classList.add('highlight-button');
+            // 5秒后移除高亮，避免长时间干扰
+            setTimeout(() => {
+                resetButton.classList.remove('highlight-button');
+            }, 5000);
+        }
     }
 }
 
@@ -849,11 +923,11 @@ function initBackgroundMusic() {
         return;
     }
     
-    // 为每个音乐元素添加结束事件监听器，以实现循环播放下一首
+    // 为每个音乐元素添加结束事件监听器，以实现随机播放下一首
     bgMusicElements.forEach((music, index) => {
         music.addEventListener('ended', () => {
             if (isMusicPlaying) {
-                playNextTrack();
+                playRandomTrack();
             }
         });
     });
@@ -866,6 +940,15 @@ function initBackgroundMusic() {
         musicToggleButton.addEventListener('click', toggleBackgroundMusic);
     } else {
         console.error("音乐控制按钮元素未找到");
+    }
+
+    // 初始时随机选择一首歌曲
+    currentMusicIndex = getRandomMusicIndex();
+    
+    // 如果用户已交互且未主动暂停音乐，尝试自动播放
+    if (userHasInteracted && !userPausedMusic) {
+        console.log("尝试自动播放初始音乐");
+        setTimeout(() => playBackgroundMusic(), 1000);
     }
 }
 
@@ -902,6 +985,39 @@ function playBackgroundMusic() {
     }
 }
 
+// 获取一个随机的音乐索引（确保不会连续播放相同的歌曲）
+function getRandomMusicIndex() {
+    if (bgMusicElements.length <= 1) return 0;
+    
+    // 如果当前没有播放音乐（初始状态），直接返回随机索引
+    if (!isMusicPlaying) {
+        return Math.floor(Math.random() * bgMusicElements.length);
+    }
+    
+    // 如果正在播放，则选择一个不同于当前播放索引的随机索引
+    let newIndex;
+    do {
+        newIndex = Math.floor(Math.random() * bgMusicElements.length);
+    } while (newIndex === currentMusicIndex);
+    
+    return newIndex;
+}
+
+// 播放随机歌曲
+function playRandomTrack() {
+    // 暂停当前音乐
+    if (bgMusicElements[currentMusicIndex]) {
+        bgMusicElements[currentMusicIndex].pause();
+        bgMusicElements[currentMusicIndex].currentTime = 0;
+    }
+    
+    // 随机选择一首新的音乐
+    currentMusicIndex = getRandomMusicIndex();
+    
+    // 播放新的音乐
+    playBackgroundMusic();
+}
+
 function pauseBackgroundMusic() {
     // 暂停当前播放的音乐
     const currentMusic = bgMusicElements[currentMusicIndex];
@@ -909,21 +1025,8 @@ function pauseBackgroundMusic() {
         currentMusic.pause();
     }
     isMusicPlaying = false;
+    userPausedMusic = true; // 标记用户已主动暂停音乐
     if (musicToggleIcon) musicToggleIcon.textContent = '🔇';
-}
-
-function playNextTrack() {
-    // 暂停当前音乐
-    if (bgMusicElements[currentMusicIndex]) {
-        bgMusicElements[currentMusicIndex].pause();
-        bgMusicElements[currentMusicIndex].currentTime = 0;
-    }
-    
-    // 切换到下一首
-    currentMusicIndex = (currentMusicIndex + 1) % bgMusicElements.length;
-    
-    // 播放新的音乐
-    playBackgroundMusic();
 }
 
 function toggleBackgroundMusic() {
@@ -931,6 +1034,7 @@ function toggleBackgroundMusic() {
         pauseBackgroundMusic();
         showTemporaryMessage("背景音乐已暂停", 1500);
     } else {
+        userPausedMusic = false; // 用户重新开启音乐，清除暂停标记
         playBackgroundMusic();
         showTemporaryMessage("背景音乐已开启", 1500);
     }
@@ -988,7 +1092,9 @@ window.addEventListener('DOMContentLoaded', () => {
                 difficultyModal.classList.add('hidden');
             }
             
-            userHasInteracted = true; // Mark user as interacted
+            userHasInteracted = true; // 标记用户已交互
+            userPausedMusic = false;  // 重置用户暂停状态，确保可以播放音乐
+            
             // 用户已交互，尝试播放背景音乐
             if (!isMusicPlaying) {
                 playBackgroundMusic();
@@ -1029,6 +1135,9 @@ window.addEventListener('DOMContentLoaded', () => {
                 console.log("[resetButton] No AI worker instance to terminate/recreate.");
             }
 
+            // 提示用户游戏将被彻底重置
+            showTemporaryMessage("游戏将被彻底重置，包括积分", 2000);
+
             // 后续逻辑：显示难度选择模态框或直接开始新游戏
             if (difficultyModal) {
                 console.log("[resetButton] Showing difficulty modal.");
@@ -1042,7 +1151,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 // 如果模态框不存在，直接初始化游戏 (重置分数)
                 if (boardElement && popupMessageElement && currentDifficultyDisplay && resetButton) {
                     if (typeof initializeBoardAndGame === 'function') {
-                        initializeBoardAndGame(true); 
+                        initializeBoardAndGame(true); // 这里传入true，确保清零积分
                     } else {
                         console.error("[resetButton] initializeBoardAndGame function is not defined for direct re-init!");
                     }
