@@ -12,7 +12,9 @@ let currentMusicIndex = 0; // 当前播放的音乐索引
 let isMusicPlaying = false; // 音乐是否正在播放
 let musicToggleButton; // 音乐控制按钮
 let musicToggleIcon; // 音乐控制按钮图标
+let nextMusicButton; // 切换下一首按钮
 let userPausedMusic = false; // 新增：用户是否主动暂停了音乐
+let currentVolumeLevel = 1; // 音量级别：3=高音量，2=中音量，1=低音量，0=静音
 
 // --- Constants (non-DOM) ---
 const ROWS = 10;
@@ -21,11 +23,11 @@ const COLS = 9;
 const initialBoardSetup = [
     ['BR1','BH1','BE1','BA1','BK' ,'BA2','BE2','BH2','BR2'], // Black pieces
     [],
-    ['' ,'' ,'BC1','' ,'' ,'' ,'BC2','' ,'' ],
+    ['' ,'BC1','' ,'' ,'' ,'' ,'' ,'BC2','' ],
     ['BP1','' ,'BP2','' ,'BP3','' ,'BP4','' ,'BP5'],
     [], [], // River
     ['RP1','' ,'RP2','' ,'RP3','' ,'RP4','' ,'RP5'], // Red pieces
-    ['' ,'' ,'RC1','' ,'' ,'' ,'RC2','' ,'' ],
+    ['' ,'RC1','' ,'' ,'' ,'' ,'' ,'RC2','' ],
     [],
     ['RR1','RH1','RE1','RA1','RK' ,'RA2','RE2','RH2','RR2']
 ];
@@ -923,23 +925,40 @@ function initBackgroundMusic() {
         return;
     }
     
-    // 为每个音乐元素添加结束事件监听器，以实现随机播放下一首
+    // 移除HTML中的loop属性，改为在音乐结束时播放下一首
     bgMusicElements.forEach((music, index) => {
+        music.removeAttribute('loop');
+        music.volume = 0.2; // 初始音量设为低音量
         music.addEventListener('ended', () => {
-            if (isMusicPlaying) {
-                playRandomTrack();
-            }
+            playRandomTrack();
         });
     });
     
     // 初始化音乐控制按钮
     musicToggleButton = document.getElementById('musicToggleButton');
     musicToggleIcon = document.getElementById('musicToggleIcon');
+    nextMusicButton = document.getElementById('nextMusicButton');
     
+    // 设置音乐控制按钮的事件监听器和初始图标
     if (musicToggleButton && musicToggleIcon) {
-        musicToggleButton.addEventListener('click', toggleBackgroundMusic);
+        musicToggleIcon.textContent = '🔈';
+        musicToggleButton.addEventListener('click', adjustVolume);
     } else {
         console.error("音乐控制按钮元素未找到");
+    }
+
+    // 设置切换下一首按钮的事件监听器
+    if (nextMusicButton) {
+        nextMusicButton.addEventListener('click', () => {
+            if (isMusicPlaying) {
+                playRandomTrack();
+                showTemporaryMessage("已切换到下一首", 1500);
+            } else {
+                showTemporaryMessage("请先开启音乐", 1500, true);
+            }
+        });
+    } else {
+        console.error("切换下一首按钮元素未找到");
     }
 
     // 初始时随机选择一首歌曲
@@ -964,13 +983,31 @@ function playBackgroundMusic() {
     // 播放当前音乐
     const currentMusic = bgMusicElements[currentMusicIndex];
     if (currentMusic) {
+        // 设置当前音量
+        let volumeValue;
+        switch (currentVolumeLevel) {
+            case 3: volumeValue = 1.0; break;
+            case 2: volumeValue = 0.6; break;
+            case 1: volumeValue = 0.2; break;
+            case 0: volumeValue = 0; break;
+        }
+        currentMusic.volume = volumeValue;
+        
         // 检查浏览器是否允许自动播放
         const playPromise = currentMusic.play();
         
         if (playPromise !== undefined) {
             playPromise.then(() => {
                 isMusicPlaying = true;
-                if (musicToggleIcon) musicToggleIcon.textContent = '🔊';
+                // 根据音量级别设置图标
+                if (musicToggleIcon) {
+                    switch (currentVolumeLevel) {
+                        case 3: musicToggleIcon.textContent = '🔊'; break;
+                        case 2: musicToggleIcon.textContent = '🔉'; break;
+                        case 1: musicToggleIcon.textContent = '🔈'; break;
+                        case 0: musicToggleIcon.textContent = '🔇'; break;
+                    }
+                }
             }).catch(error => {
                 console.warn("无法自动播放背景音乐:", error);
                 isMusicPlaying = false;
@@ -989,12 +1026,6 @@ function playBackgroundMusic() {
 function getRandomMusicIndex() {
     if (bgMusicElements.length <= 1) return 0;
     
-    // 如果当前没有播放音乐（初始状态），直接返回随机索引
-    if (!isMusicPlaying) {
-        return Math.floor(Math.random() * bgMusicElements.length);
-    }
-    
-    // 如果正在播放，则选择一个不同于当前播放索引的随机索引
     let newIndex;
     do {
         newIndex = Math.floor(Math.random() * bgMusicElements.length);
@@ -1005,6 +1036,8 @@ function getRandomMusicIndex() {
 
 // 播放随机歌曲
 function playRandomTrack() {
+    if (!isMusicPlaying) return; // 如果音乐被暂停，不进行切换
+    
     // 暂停当前音乐
     if (bgMusicElements[currentMusicIndex]) {
         bgMusicElements[currentMusicIndex].pause();
@@ -1015,7 +1048,17 @@ function playRandomTrack() {
     currentMusicIndex = getRandomMusicIndex();
     
     // 播放新的音乐
-    playBackgroundMusic();
+    const currentMusic = bgMusicElements[currentMusicIndex];
+    if (currentMusic) {
+        const playPromise = currentMusic.play();
+        if (playPromise !== undefined) {
+            playPromise.catch(error => {
+                console.warn("无法播放背景音乐:", error);
+                isMusicPlaying = false;
+                if (musicToggleIcon) musicToggleIcon.textContent = '🔇';
+            });
+        }
+    }
 }
 
 function pauseBackgroundMusic() {
@@ -1037,6 +1080,68 @@ function toggleBackgroundMusic() {
         userPausedMusic = false; // 用户重新开启音乐，清除暂停标记
         playBackgroundMusic();
         showTemporaryMessage("背景音乐已开启", 1500);
+    }
+}
+
+// 调整音量的函数
+function adjustVolume() {
+    // 循环切换音量级别：3(高) -> 2(中) -> 1(低) -> 0(静音) -> 3(高)
+    currentVolumeLevel = (currentVolumeLevel + 1) % 4;
+    
+    // 根据音量级别设置实际音量值和图标
+    let volumeValue;
+    let volumeIcon;
+    let volumeText;
+    
+    switch (currentVolumeLevel) {
+        case 3: // 高音量
+            volumeValue = 1.0;
+            volumeIcon = '🔊';
+            volumeText = "音量：高";
+            isMusicPlaying = true;
+            userPausedMusic = false;
+            break;
+        case 2: // 中音量
+            volumeValue = 0.6;
+            volumeIcon = '🔉';
+            volumeText = "音量：中";
+            isMusicPlaying = true;
+            userPausedMusic = false;
+            break;
+        case 1: // 低音量
+            volumeValue = 0.2;
+            volumeIcon = '🔈';
+            volumeText = "音量：低";
+            isMusicPlaying = true;
+            userPausedMusic = false;
+            break;
+        case 0: // 静音
+            volumeValue = 0;
+            volumeIcon = '🔇';
+            volumeText = "已静音";
+            isMusicPlaying = false;
+            userPausedMusic = true;
+            break;
+    }
+    
+    // 更新所有音乐元素的音量
+    bgMusicElements.forEach(music => {
+        if (music) {
+            music.volume = volumeValue;
+        }
+    });
+    
+    // 更新图标
+    if (musicToggleIcon) {
+        musicToggleIcon.textContent = volumeIcon;
+    }
+    
+    // 显示音量变化提示
+    showTemporaryMessage(volumeText, 1500);
+    
+    // 如果从静音切换到有声状态，且当前没有音乐在播放，则开始播放
+    if (currentVolumeLevel > 0 && !isMusicPlaying) {
+        playBackgroundMusic();
     }
 }
 
